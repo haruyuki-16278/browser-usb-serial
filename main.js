@@ -1,56 +1,72 @@
-let port;
-let disconnectFlag;
+document.addEventListener('alpine:init', () => {
+  Alpine.data('props', () => ({
+    port: undefined,
+    disconnectFlag: true,
 
-async function onClickConnect() {
-  try {
-    disconnectFlag = false;
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: 115200 });
+    addMessage(text) {
+      const textarea = document.getElementById('outputArea');
+      textarea.value += text;
+      textarea.scrollTop = textarea.scrollHeight;
+    },
 
-    while (port.readable) {
-      const reader = port.readable.getReader();
-
+    async onClickConnect() {
       try {
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) { break; }
-          const inputValue = new TextDecoder().decode(value);
-          console.log(inputValue);
+        this.disconnectFlag = false;
+        this.port = await navigator.serial.requestPort();
+        await this.port.open({ baudRate: 115200 });
+
+        while (this.port.readable) {
+          const reader = this.port.readable.getReader();
+
+          try {
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) { break; }
+              const inputValue = new TextDecoder().decode(value);
+              this.addMessage(inputValue);
+            }
+          }
+          catch (error) {
+            if (error.message === "The device has been lost." && this.disconnectFlag) return;
+            console.table(error);
+          }
+          finally {
+            reader.releaseLock();
+          }
         }
       }
       catch (error) {
-        if (error.message === "The device has been lost." && disconnectFlag) return;
-        console.table(error);
+        console.error(error);
       }
-      finally {
-        reader.releaseLock();
+    },
+
+    async onClickDisconnect() {
+      try {
+        this.disconnectFlag = true;
+        await this.port.forget();
+        window.alert('disconnected');
+      }
+      catch (error) {
+        console.error(error);
+      }
+    },
+
+    async sendSerial() {
+      const inputElem = document.getElementById('sendInput');
+      const text = inputElem.value;
+      inputElem.value = '';
+
+      const encoder = new TextEncoder();
+      if (this.port.writable) {
+        const writer = this.port.writable.getWriter();
+        await writer.write(encoder.encode(text + "\n"));
+        writer.releaseLock();
+      }
+      else {
+        window.alert('device unavailable');
       }
     }
-  }
-  catch (error) {
-    console.error(error);
-  }
-}
 
-async function onClickDisconnect() {
-  try {
-    disconnectFlag = true;
-    await port.forget();
-    window.alert('disconnected');
-  }
-  catch (error) {
-    console.error(error);
-  }
-}
-
-async function sendSerial() {
-  const inputElem = document.getElementById('sendInput');
-  const text = inputElem.value;
-  inputElem.value = '';
-
-  const encoder = new TextEncoder();
-  const writer = port.writable.getWriter();
-  await writer.write(encoder.encode(text + "\n"));
-  writer.releaseLock();
-}
+  }))
+})
 
